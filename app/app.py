@@ -110,3 +110,37 @@ elif menu == "Enrollments & Grades":
                 st.error(f"Error: {err}")
         finally:
             cursor.close()
+    # Assign grades
+    st.subheader("Assign/Update Final Grade")
+
+    #get enrollments list
+    enrollments_df = run_query("""
+        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', s.last_name) AS student_name, c.course_name, e.final_grade
+        FROM enrollments e
+        JOIN students s ON e.student_id = s.student_id
+        JOIN courses c ON e.course_id = c.course_id
+        ORDER BY student_name, course_name
+    """)
+
+    if enrollments_df.empty:
+        st.info("No enrollments found. Please enroll students in courses first.")
+    else:
+        # let user select an enrollment to update grade
+        enrollment_options = {
+            f"{row['student_name']} - {row['course_name']} (current grade: {row['final_grade'] or 'None'})": row['enrollment_id']
+            for _, row in enrollments_df.iterrows()
+        }
+        selected_enrollment_label = st.selectbox("Select Enrollment", list(enrollment_options.keys()))
+        enrollment_id = enrollment_options[selected_enrollment_label]
+
+        new_grade = st.selectbox("New Grade", ["", "S", "A", "B", "C", "D", "F"], index=0)
+        if st.button("Update Grade") and new_grade:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE enrollments SET final_grade = %s WHERE enrollment_id = %s",
+                (new_grade , enrollment_id)
+                )
+            conn.commit()
+            st.success(f"Grade updated to {new_grade}")
+            cursor.close()
+            st.rerun()  # Refresh the app
