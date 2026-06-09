@@ -23,7 +23,17 @@ conn = init_connection()
 def run_query(query):
     return pd.read_sql(query, conn)
 
-st.title("School Database Dashboard")
+st.title("📚 School Database Manager")
+
+# Sidebar for navigation
+menu = st.sidebar.selectbox("Menu", ["View Data", "Add Records", "Enrollments & Grades"])
+
+if menu == "View Data":
+    st.subheader("View Tables")
+    table = st.selectbox("Choose table", ["students", "teachers", "courses", "enrollments"])
+    if st.button("Show Data"):
+        df = run_query(f"SELECT * FROM {table}")
+        st.dataframe(df)
 
 #show students data
 if st.checkbox("Show all students"):
