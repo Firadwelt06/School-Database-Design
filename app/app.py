@@ -78,3 +78,35 @@ elif menu == "Add Records":
                 st.error(f"Error: {err}")
             finally:
                 cursor.close()
+
+# Enroll students in courses and assign grades
+elif menu == "Enrollments & Grades":
+    st.subheader("Enroll a Student in a Course")
+    #get students list
+    students_df = run_query("SELECT student_id, first_name, last_name FROM students ORDER BY last_name")
+    student_options = {f"{row['first_name']} {row['last_name']}": row['student_id'] for _, row in students_df.iterrows()}
+    selected_student = st.selectbox("Student", list(student_options.keys()))
+    student_id = student_options[selected_student]
+
+    #get courses list    
+    courses_df = run_query("SELECT course_id, course_name FROM courses ORDER BY course_name")
+    course_options = {row['course_name']: row['course_id'] for _, row in courses_df.iterrows()}
+    selected_course = st.selectbox("Select Course", list(course_options.keys()))
+    course_id = course_options[selected_course]
+    
+    if st.button("Enroll"):
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO enrollments (student_id, course_id) VALUES (%s, %s)",
+                (student_id, course_id)
+            )
+            conn.commit()
+            st.success(f"Enrolled {selected_student} in {selected_course}")
+        except mysql.connector.Error as err:
+            if "Duplicate entry" in str(err):
+                st.warning(f"{selected_student} is already enrolled in {selected_course}")
+            else:
+                st.error(f"Error: {err}")
+        finally:
+            cursor.close()
