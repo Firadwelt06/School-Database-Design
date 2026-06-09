@@ -35,27 +35,46 @@ if menu == "View Data":
         df = run_query(f"SELECT * FROM {table}")
         st.dataframe(df)
 
-#show students data
-if st.checkbox("Show all students"):
-    students_df = run_query("SELECT * FROM students")
-    st.dataframe(students_df)
-
-# add a new student
-with st.form("Add Student"):
-    fname = st.text_input("First Name")
-    lname = st.text_input("Last Name")
-    email = st.text_input("Email")
-    grade = st.number_input("Grade level (0-12)", min_value=0, max_value=12, step=1)
-    submitted = st.form_submit_button("Add Student")
-    if submitted:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "INSERT INTO students (first_name, last_name, email, grade) VALUES (%s, %s, %s, %s)",
-                           (fname, lname, email, grade))
-            conn.commit()
-            st.success("Student added!")
-        except mysql.connector.Error as err:
-            st.error(f"Error: {err}")
-        finally:
-            cursor.close()
+# Add new students and teachers with validation
+elif menu == "Add Records":
+    st.subheader("Add a New Student")
+    with st.form("New Student"):
+        fname = st.text_input("First Name")
+        lname = st.text_input("Last Name")
+        email = st.text_input("Email")
+        grade_level = st.number_input("Grade level (9-12)", min_value=9, max_value=12, step=1)
+        submitted = st.form_submit_button("Add Student")
+        if submitted:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO students (first_name, last_name, email, grade_level) VALUES (%s, %s, %s, %s)",
+                            (fname, lname, email, grade_level)
+                )
+                conn.commit()
+                st.success(f"Student {fname} {lname} added!")
+            except mysql.connector.Error as err:
+                st.error(f"Error: {err}")
+            finally:
+                cursor.close()
+    # Add new teachers
+    st.subheader("Add a New Teacher")
+    with st.form("New Teacher"):
+        fname = st.text_input("First Name")
+        lname = st.text_input("Last Name")
+        email = st.text_input("Email")
+        hire_date = st.date_input("Hire Date")
+        submitted = st.form_submit_button("Add Teacher")
+        if submitted:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO teachers (first_name, last_name, email, hire_date) VALUES (%s, %s, %s, %s)",
+                            (fname, lname, email, hire_date)
+                )
+                conn.commit()
+                st.success(f"Teacher {fname} {lname} added!")
+            except mysql.connector.Error as err:
+                st.error(f"Error: {err}")
+            finally:
+                cursor.close()
