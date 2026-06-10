@@ -30,7 +30,7 @@ def run_query(query):
 st.title("📚 School Database Manager")
 
 # Sidebar for navigation
-menu = st.sidebar.selectbox("Menu", ["View Data", "Add Records", "Enrollments & Grades", "Student Summary", "Course Summary"])
+menu = st.sidebar.selectbox("Menu", ["View Data", "Dashboard", "Add Records", "Enrollments & Grades", "Student Summary", "Course Summary"])
 
 if menu == "View Data":
     st.subheader("View Tables")
@@ -49,6 +49,40 @@ if menu == "View Data":
         else:
             df = run_query(f"SELECT * FROM {table}")
         st.dataframe(df, use_container_width=True)
+
+# Dashboard with key metrics and recent activity
+elif menu == "Dashboard":
+    st.subheader("School Dashboard")
+    
+    # Get counts
+    student_count = run_query("SELECT COUNT(*) as count FROM students").iloc[0]['count']
+    teacher_count = run_query("SELECT COUNT(*) as count FROM teachers").iloc[0]['count']
+    course_count = run_query("SELECT COUNT(*) as count FROM courses").iloc[0]['count']
+    enrollment_count = run_query("SELECT COUNT(*) as count FROM enrollments").iloc[0]['count']
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Students", student_count)
+    with col2:
+        st.metric("Total Teachers", teacher_count)
+    with col3:
+        st.metric("Active Courses", course_count)
+    with col4:
+        st.metric("Enrollments", enrollment_count)
+    
+    # Show recent enrollments
+    st.subheader("Recent Enrollments")
+    recent = run_query("""
+        SELECT CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student,
+               c.course_name,
+               DATE(e.enrollment_date) AS enrolled_on
+        FROM enrollments e
+        JOIN students s ON e.student_id = s.student_id
+        JOIN courses c ON e.course_id = c.course_id
+        ORDER BY e.enrollment_date DESC
+        LIMIT 5
+    """)
+    st.dataframe(recent, use_container_width=True)
 
 # Add new students and teachers with validation
 elif menu == "Add Records":
