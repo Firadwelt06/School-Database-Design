@@ -40,6 +40,7 @@ elif menu == "Add Records":
     st.subheader("Add a New Student")
     with st.form("New Student"):
         fname = st.text_input("First Name")
+        mname = st.text_input("Middle Name (Optional)")
         lname = st.text_input("Last Name")
         email = st.text_input("Email")
         grade_level = st.number_input("Grade level (9-12)", min_value=9, max_value=12, step=1)
@@ -48,8 +49,8 @@ elif menu == "Add Records":
             cursor = conn.cursor()
             try:
                 cursor.execute(
-                    "INSERT INTO students (first_name, last_name, email, grade_level) VALUES (%s, %s, %s, %s)",
-                            (fname, lname, email, grade_level)
+                    "INSERT INTO students (first_name, middle_name, last_name, email, grade_level) VALUES (%s, %s, %s, %s, %s)",
+                            (fname, mname if mname else None, lname, email, grade_level)
                 )
                 conn.commit()
                 st.success(f"Student {fname} {lname} added!")
