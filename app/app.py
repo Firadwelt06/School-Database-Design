@@ -36,9 +36,36 @@ if menu == "View Data":
     st.subheader("View Tables")
     table = st.selectbox("Choose table", ["students", "teachers", "courses", "enrollments"])
     if st.button("Show Data"):
-        df = run_query(f"SELECT * FROM {table}")
-        st.dataframe(df)
+        if table == "enrollments":
+            # Custom query with names instead of IDs for better readability
+            df = run_query(f"""
+                SELECT e.enrollment_id, CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name,
+                DATE(e.enrollment_date) AS enrollment_date,
+                COALESCE(e.final_grade, 'Not graded') AS final_grade
+                FROM enrollments e
+                JOIN students s ON e.student_id = s.student_id
+                JOIN courses c ON e.course_id = c.course_id
+            """)
+        else:
+            df = run_query(f"SELECT * FROM {table}")
+        st.dataframe(df, use_container_width=True)
 
+elif menu == "Enrollments & Grades":
+    # Show enrollments table at the top
+    st.subheader("Current Enrollments")
+    enrollments_view = run_query("""
+        SELECT
+            CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name,
+            c.course_name AS course,
+            DATE(e.enrollment_date) AS enrollment_on,
+            COALESCE(e.final_grade, 'Not graded') AS grade
+        FROM enrollments e
+        JOIN students s ON e.student_id = s.student_id
+        JOIN courses c ON e.course_id = c.course_id
+        ORDER BY e.enrollment_id DESC
+    """)
+    st.dataframe(enrollments_view, use_container_width=True)
+                         
 # Add new students and teachers with validation
 elif menu == "Add Records":
     st.subheader("Add a New Student")
@@ -120,7 +147,7 @@ elif menu == "Enrollments & Grades":
 
     #get enrollments list
     enrollments_df = run_query("""
-        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', IFNULL(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name, e.final_grade
+        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', IFNULL(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name, COALESCE(e.final_grade, 'Not graded') AS final_grade
         FROM enrollments e
         JOIN students s ON e.student_id = s.student_id
         JOIN courses c ON e.course_id = c.course_id
