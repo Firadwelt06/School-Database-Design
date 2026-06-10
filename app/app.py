@@ -255,7 +255,7 @@ elif menu == "Student Summary":
 elif menu == "Course Summary":
     st.subheader("Course Enrollment Summary")
     
-    # Select course
+    # Get courses with teacher info
     courses_df = run_query("""
         SELECT course_id, course_name, capacity,
                CONCAT(t.first_name, ' ', t.last_name) AS teacher
@@ -264,46 +264,58 @@ elif menu == "Course Summary":
         ORDER BY course_name
     """)
     
-    course_options = {row['course_name']: row['course_id'] for _, row in courses_df.iterrows()}
-    selected_course = st.selectbox("Select Course", list(course_options.keys()))
-    course_id = course_options[selected_course]
-    course_info = courses_df[courses_df['course_id'] == course_id].iloc[0]
-    
-    # Show course details
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Course", selected_course)
-        st.metric("Teacher", course_info['teacher'])
-    with col2:
-        st.metric("Capacity", course_info['capacity'])
-        
-        # Current enrollment count
-        enrollment_count = run_query(f"""
-            SELECT COUNT(*) as count FROM enrollments WHERE course_id = {course_id}
-        """).iloc[0]['count']
-        st.metric("Enrolled Students", enrollment_count)
-    
-    # Show enrolled students
-    students_in_course = run_query(f"""
-        SELECT CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student,
-               s.grade_level,
-               COALESCE(e.final_grade, 'Not graded') AS grade,
-               DATE(e.enrollment_date) AS enrolled_on
-        FROM enrollments e
-        JOIN students s ON e.student_id = s.student_id
-        WHERE e.course_id = {course_id}
-        ORDER BY s.last_name
-    """)
-    
-    if not students_in_course.empty:
-        st.subheader("Enrolled Students")
-        st.dataframe(students_in_course, use_container_width=True)
-        
-        # Grade distribution for this course
-        graded = students_in_course[students_in_course['grade'] != 'Not graded']
-        if not graded.empty:
-            st.subheader("Grade Distribution")
-            grade_counts = graded['grade'].value_counts()
-            st.bar_chart(grade_counts)
+    if courses_df.empty:
+        st.warning("No courses found. Please add courses first.")
     else:
-        st.info("No students enrolled in this course yet.")
+        course_options = {row['course_name']: row['course_id'] for _, row in courses_df.iterrows()}
+        selected_course_name = st.selectbox("Select Course", list(course_options.keys()))
+        course_id = course_options[selected_course_name]
+        
+        # Get the selected course info
+        selected_course = courses_df[courses_df['course_id'] == course_id].iloc[0]
+        
+        # Show course details (now consistent with selection)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Course", selected_course['course_name'])  # Fixed: shows selected course
+            st.metric("Teacher", selected_course['teacher'])
+        with col2:
+            st.metric("Capacity", selected_course['capacity'])
+            
+            # Current enrollment count
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM enrollments WHERE course_id = %s", (course_id,))
+            enrollment_count = cursor.fetchone()[0]
+            cursor.close()
+            st.metric("Enrolled Students", enrollment_count)
+        
+        # Show enrolled students
+        students_in_course = run_query(f"""
+            SELECT CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student,
+                   s.grade_level,
+                   COALESCE(e.final_grade, 'Not graded') AS grade,
+                   DATE(e.enrollment_date) AS enrolled_on
+            FROM enrollments e
+            JOIN students s ON e.student_id = s.student_id
+            WHERE e.course_id = {course_id}
+            ORDER BY s.last_name
+        """)
+        
+        if not students_in_course.empty:
+            st.subheader("Enrolled Students")
+            st.dataframe(students_in_course, use_container_width=True)
+            
+            # Grade distribution for this course
+            graded = students_in_course[students_in_course['grade'] != 'Not graded']
+            if not graded.empty:
+                st.subheader("Grade Distribution")
+                grade_counts = graded['grade'].value_counts()
+                st.bar_chart(grade_counts)
+                
+                # Show percentage breakdown
+                st.subheader("Grade Breakdown (%)")
+                percentages = (grade_counts / len(graded) * 100).round(1)
+                for grade, pct in percentages.items():
+                    st.write(f"{grade}: {pct}%")
+        else:
+            st.info("No students enrolled in this course yet.")
