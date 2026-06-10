@@ -4,6 +4,10 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 
+# Initialize session state for grade update message
+if 'grade_update_message' not in st.session_state:
+    st.session_state.grade_update_message = None
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -116,7 +120,7 @@ elif menu == "Enrollments & Grades":
 
     #get enrollments list
     enrollments_df = run_query("""
-        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', s.last_name) AS student_name, c.course_name, e.final_grade
+        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', IFNULL(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name, e.final_grade
         FROM enrollments e
         JOIN students s ON e.student_id = s.student_id
         JOIN courses c ON e.course_id = c.course_id
@@ -142,6 +146,11 @@ elif menu == "Enrollments & Grades":
                 (new_grade , enrollment_id)
                 )
             conn.commit()
-            st.success(f"Grade updated to {new_grade}")
+            st.session_state.grade_update_message = f"Grade updated to {new_grade} for {selected_enrollment_label}"
             cursor.close()
             st.rerun()  # Refresh the app
+
+        # Display message if exists
+        if st.session_state.grade_update_message:
+            st.success(st.session_state.grade_update_message)
+            st.session_state.grade_update_message = None  # Clear message after displaying
