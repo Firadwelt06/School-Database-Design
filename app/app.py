@@ -427,11 +427,16 @@ elif menu == "Student Summary":
             # Get grades with parametized query
             grades_df = run_query(f"""
                 SELECT c.course_name,
-                       COALESCE(e.final_grade, 'Not graded') AS grade,
-                       DATE(e.enrollment_date) AS enrolled_date
+                    COALESCE(e.final_grade, 'Not graded') AS grade,
+                    DATE(e.enrollment_date) AS enrolled_date,
+                    sem.semester_name,
+                    ay.year_name
                 FROM enrollments e
                 JOIN courses c ON e.course_id = c.course_id
+                JOIN semesters sem ON e.semester_id = sem.semester_id
+                JOIN academic_years ay ON e.academic_year_id = ay.year_id
                 WHERE e.student_id = {student_id}
+                AND e.semester_id = {st.session_state.selected_semester_id}
                 ORDER BY c.course_name
             """)
             
