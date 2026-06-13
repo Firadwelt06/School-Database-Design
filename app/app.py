@@ -4,10 +4,6 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 
-# Initialize session state for grade update message
-if 'grade_update_message' not in st.session_state:
-    st.session_state.grade_update_message = None
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -27,10 +23,105 @@ conn = init_connection()
 def run_query(query):
     return pd.read_sql(query, conn)
 
-st.title("📚 School Database Manager")
+# Initialize session state for filters
+if 'selected_semester_id' not in st.session_state:
+    st.session_state.selected_semester_id = None
+if 'selected_year_id' not in st.session_state:
+    st.session_state.selected_year_id = None
+if 'grade_filter' not in st.session_state:
+    st.session_state.grade_filter = "All Grades"
 
-# Sidebar for navigation
-menu = st.sidebar.selectbox("Menu", ["View Data", "Dashboard", "Add Records", "Enrollments & Grades", "Student Summary", "Course Summary"])
+# Sidebar - Academic Period Selector
+st.sidebar.title("📚 School Database")
+st.sidebar.subheader("📅 Academic Period")
+
+try:
+    # Get available academic years - check if table exists first
+    years_check = run_query("SHOW TABLES LIKE 'academic_years'")
+    if years_check.empty:
+        st.sidebar.error("⚠️ academic_years table not found. Please run database migration.")
+        st.session_state.selected_year_id = None
+        st.session_state.selected_semester_id = None
+    else:
+        years_df = run_query("SELECT year_id, year_name, is_current FROM academic_years ORDER BY year_name DESC")
+        
+        if years_df.empty:
+            st.sidebar.warning("No academic years configured. Please add them in MySQL.")
+            st.session_state.selected_year_id = None
+            st.session_state.selected_semester_id = None
+        else:
+            # Check if 'is_current' column exists
+            if 'is_current' in years_df.columns:
+                # Find current year index
+                current_mask = years_df['is_current'] == True
+                if current_mask.any():
+                    default_idx = current_mask.idxmax()
+                else:
+                    default_idx = 0
+            else:
+                st.sidebar.warning("'is_current' column missing. Using first year as default.")
+                default_idx = 0
+            
+            year_options = {row['year_name']: row['year_id'] for _, row in years_df.iterrows()}
+            selected_year_name = st.sidebar.selectbox(
+                "Academic Year",
+                list(year_options.keys()),
+                index=min(default_idx, len(year_options)-1)
+            )
+            st.session_state.selected_year_id = year_options[selected_year_name]
+            
+            # Get semesters for selected year
+            semesters_df = run_query(f"""
+                SELECT semester_id, semester_name, semester_order 
+                FROM semesters 
+                WHERE year_id = {st.session_state.selected_year_id}
+                ORDER BY semester_order
+            """)
+            
+            if semesters_df.empty:
+                st.sidebar.warning(f"No semesters found for {selected_year_name}")
+                st.session_state.selected_semester_id = None
+            else:
+                semester_options = {row['semester_name']: row['semester_id'] for _, row in semesters_df.iterrows()}
+                default_semester = 'Fall' if 'Fall' in semester_options else list(semester_options.keys())[0]
+                selected_semester_name = st.sidebar.selectbox(
+                    "Semester",
+                    list(semester_options.keys()),
+                    index=list(semester_options.keys()).index(default_semester)
+                )
+                st.session_state.selected_semester_id = semester_options[selected_semester_name]
+                
+                st.sidebar.success(f"📚 Viewing: {selected_semester_name} {selected_year_name}")
+                
+except Exception as e:
+    st.sidebar.error(f"Error loading academic data: {str(e)}")
+    st.session_state.selected_year_id = None
+    st.session_state.selected_semester_id = None
+
+# Sidebar - Grade Level Filter
+st.sidebar.subheader("🎓 Grade Level Filter")
+grade_filter = st.sidebar.selectbox(
+    "Show students in:",
+    ["All Grades", "Grade 9", "Grade 10", "Grade 11", "Grade 12"],
+    key="grade_filter_widget"
+)
+st.session_state.grade_filter = grade_filter
+
+# Convert to SQL condition
+grade_condition = ""
+if grade_filter != "All Grades":
+    grade_level = int(grade_filter.split()[1])
+    grade_condition = f"AND s.grade_level = {grade_level}"
+
+# Navigation menu
+menu = st.sidebar.selectbox("Navigation", [
+    "Dashboard",
+    "Student Summary", 
+    "Course Summary", 
+    "Manage Enrollments", 
+    "Add Records", 
+    "Raw Data"
+])
 
 if menu == "View Data":
     st.subheader("View Tables")
@@ -52,37 +143,114 @@ if menu == "View Data":
 
 # Dashboard with key metrics and recent activity
 elif menu == "Dashboard":
-    st.subheader("School Dashboard")
-    
-    # Get counts
-    student_count = run_query("SELECT COUNT(*) as count FROM students").iloc[0]['count']
-    teacher_count = run_query("SELECT COUNT(*) as count FROM teachers").iloc[0]['count']
-    course_count = run_query("SELECT COUNT(*) as count FROM courses").iloc[0]['count']
-    enrollment_count = run_query("SELECT COUNT(*) as count FROM enrollments").iloc[0]['count']
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Students", student_count)
-    with col2:
-        st.metric("Total Teachers", teacher_count)
-    with col3:
-        st.metric("Active Courses", course_count)
-    with col4:
-        st.metric("Enrollments", enrollment_count)
-    
-    # Show recent enrollments
-    st.subheader("Recent Enrollments")
-    recent = run_query("""
-        SELECT CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student,
-               c.course_name,
-               DATE(e.enrollment_date) AS enrolled_on
-        FROM enrollments e
-        JOIN students s ON e.student_id = s.student_id
-        JOIN courses c ON e.course_id = c.course_id
-        ORDER BY e.enrollment_date DESC
-        LIMIT 5
-    """)
-    st.dataframe(recent, use_container_width=True)
+    # Check if semester is selected
+    if st.session_state.selected_semester_id is None:
+        st.warning("⚠️ Please select an academic year and semester from the sidebar first.")
+        st.info("If no options appear, run the database migration script to set up academic years and semesters.")
+    else:
+        st.subheader(f"School Dashboard")
+        
+        semester_filter = f"WHERE semester_id = {st.session_state.selected_semester_id}"
+        
+        # Get counts
+        try:
+            student_count = run_query(f"""
+                SELECT COUNT(DISTINCT student_id) as count 
+                FROM enrollments 
+                {semester_filter}
+            """).iloc[0]['count']
+            
+            course_count = run_query(f"""
+                SELECT COUNT(DISTINCT course_id) as count 
+                FROM enrollments 
+                {semester_filter}
+            """).iloc[0]['count']
+            
+            enrollment_count = run_query(f"SELECT COUNT(*) as count FROM enrollments {semester_filter}").iloc[0]['count']
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Active Students", student_count)
+            with col2:
+                st.metric("Active Courses", course_count)
+            with col3:
+                st.metric("Total Enrollments", enrollment_count)
+            
+            # Top Students by GPA
+            st.subheader("🏆 Top Students This Semester")
+            
+            grade_points = {'S': 4.0, 'A': 3.5, 'B': 3.0, 'C': 2.0, 'D': 1.0}
+            
+            top_students_df = run_query(f"""
+                SELECT 
+                    s.student_id,
+                    CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name,
+                    s.grade_level,
+                    e.final_grade
+                FROM enrollments e
+                JOIN students s ON e.student_id = s.student_id
+                WHERE e.semester_id = {st.session_state.selected_semester_id}
+                AND e.final_grade IS NOT NULL
+                {grade_condition}
+            """)
+            
+            if not top_students_df.empty:
+                # Calculate GPA per student
+                gpa_results = []
+                for student_id in top_students_df['student_id'].unique():
+                    student_grades = top_students_df[top_students_df['student_id'] == student_id]
+                    points = [grade_points[g] for g in student_grades['final_grade'] if g in grade_points]
+                    if points:
+                        avg_gpa = sum(points) / len(points)
+                        gpa_results.append({
+                            'student_name': student_grades['student_name'].iloc[0],
+                            'grade_level': student_grades['grade_level'].iloc[0],
+                            'gpa': avg_gpa,
+                            'courses_taken': len(points)
+                        })
+                
+                if gpa_results:
+                    top_gpa_df = pd.DataFrame(gpa_results).sort_values('gpa', ascending=False).head(10)
+                    
+                    for idx, row in top_gpa_df.iterrows():
+                        col1, col2, col3 = st.columns([3,1,1])
+                        with col1:
+                            st.write(f"**{row['student_name']}** (Grade {row['grade_level']})")
+                        with col2:
+                            st.write(f"GPA: {row['gpa']:.2f}")
+                        with col3:
+                            st.write(f"{row['courses_taken']} courses")
+                    
+                    # Bar chart of top 5
+                    st.subheader("Top 5 Students GPA Comparison")
+                    chart_data = top_gpa_df.head(5)[['student_name', 'gpa']]
+                    st.bar_chart(chart_data.set_index('student_name'))
+                else:
+                    st.info("No complete grade records found.")
+            else:
+                st.info("No grades recorded yet this semester.")
+            
+            # Grade distribution
+            st.subheader("📊 Semester Grade Distribution")
+            grade_dist = run_query(f"""
+                SELECT 
+                    final_grade,
+                    COUNT(*) as count
+                FROM enrollments
+                WHERE semester_id = {st.session_state.selected_semester_id}
+                AND final_grade IS NOT NULL
+                GROUP BY final_grade
+                ORDER BY FIELD(final_grade, 'S', 'A', 'B', 'C', 'D')
+            """)
+            
+            if not grade_dist.empty:
+                st.bar_chart(grade_dist.set_index('final_grade'))
+            else:
+                st.info("No grades recorded this semester.")
+                
+        except Exception as e:
+            st.error(f"Error loading dashboard data: {str(e)}")
+            st.info("Make sure your database has enrollments with valid semester_id values.")
 
 # Add new students and teachers with validation
 elif menu == "Add Records":
