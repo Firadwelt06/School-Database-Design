@@ -199,7 +199,7 @@ elif menu == "Dashboard":
             # Top Students by GPA
             st.subheader("🏆 Top Students This Semester")
             
-            grade_points = {'S': 4.0, 'A': 3.5, 'B': 3.0, 'C': 2.0, 'D': 1.0}
+            grade_points = {'S': 4.0, 'A': 3.5, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0}
             
             top_students_df = run_query(f"""
                 SELECT 
@@ -492,7 +492,7 @@ elif menu == "Student Summary":
                     st.bar_chart(grade_counts)
                     
                     # Add GPA-like summary (optional)
-                    grade_points = {'S': 4.0, 'A': 3.5, 'B': 3.0, 'C': 2.0, 'D': 1.0}
+                    grade_points = {'S': 4.0, 'A': 3.5, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0}
                     if all(g in grade_points for g in graded['grade']):
                         avg_points = graded['grade'].map(grade_points).mean()
                         st.metric("Average Grade Point", f"{avg_points:.2f}")
