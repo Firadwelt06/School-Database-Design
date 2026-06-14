@@ -427,8 +427,12 @@ elif menu == "Enrollments & Grades":
 elif menu == "Student Summary":
     st.subheader("Student Academic Summary")
     
-    # Select student
-    students_df = run_query("""
+    if st.session_state.selected_semester_id is None:
+        st.warning("⚠️ Please select an academic year and semester from the sidebar first.")
+        st.info("If no options appear, run the database migration script to set up academic years and semesters.")
+    else:
+        # Select student
+        students_df = run_query("""
         SELECT student_id, 
                CONCAT(first_name, ' ', COALESCE(middle_name, ''), ' ', last_name) AS full_name, grade_level
         FROM students 
@@ -497,7 +501,7 @@ elif menu == "Student Summary":
                         avg_points = graded['grade'].map(grade_points).mean()
                         st.metric("Average Grade Point", f"{avg_points:.2f}")
             else:
-                st.info("This student is not enrolled in any courses yet.")
+                    st.info("This student is not enrolled in any courses yet.")
 
 elif menu == "Course Summary":
     st.subheader("Course Enrollment Summary")
