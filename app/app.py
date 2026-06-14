@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+
+
 # database connection function with caching to optimize performance
-@st.cache_resource
 def init_connection():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST"),
@@ -17,11 +18,17 @@ def init_connection():
         database="school_db",
         auth_plugin="mysql_native_password"
     )
-conn = init_connection()
 
-# simple query with panda
+def get_conn():
+    if 'conn' not in st.session_state or not st.session_state.conn.is_connected():
+        st.session_state.conn = init_connection()
+    return st.session_state.conn
+
+conn = get_conn()
+
+# Query with panda
 def run_query(query):
-    return pd.read_sql(query, conn)
+    return pd.read_sql(query, get_conn())
 
 # Initialize session state for filters
 if 'selected_semester_id' not in st.session_state:
@@ -30,7 +37,8 @@ if 'selected_year_id' not in st.session_state:
     st.session_state.selected_year_id = None
 if 'grade_filter' not in st.session_state:
     st.session_state.grade_filter = "All Grades"
-
+if 'grade_update_message' not in st.session_state:
+    st.session_state.grade_update_message = None
 # Sidebar - Academic Period Selector
 st.sidebar.title("📚 School Database")
 st.sidebar.subheader("📅 Academic Period")
@@ -55,7 +63,7 @@ try:
                 # Find current year index
                 current_mask = years_df['is_current'] == True
                 if current_mask.any():
-                    default_idx = current_mask.idxmax()
+                    default_idx = years_df.index.get_loc(current_mask.idxmax())
                 else:
                     default_idx = 0
             else:
@@ -414,7 +422,8 @@ elif menu == "Enrollments & Grades":
         if st.session_state.grade_update_message:
             st.success(st.session_state.grade_update_message)
             st.session_state.grade_update_message = None  # Clear message after displaying
-
+        if 'grade_update_message' not in st.session_state:
+            st.session_state.grade_update_message = None
 elif menu == "Student Summary":
     st.subheader("Student Academic Summary")
     
@@ -467,7 +476,7 @@ elif menu == "Student Summary":
                 JOIN semesters sem ON e.semester_id = sem.semester_id
                 JOIN academic_years ay ON e.academic_year_id = ay.year_id
                 WHERE e.student_id = {student_id}
-                AND e.semester_id = {st.session_state.selected_semester_id}
+                {"AND e.semester_id = " + str(st.session_state.selected_semester_id) if st.session_state.selected_semester_id else ""}
                 ORDER BY c.course_name
             """)
             
