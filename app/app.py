@@ -118,9 +118,9 @@ menu = st.sidebar.selectbox("Navigation", [
     "Dashboard",
     "Student Summary", 
     "Course Summary", 
-    "Manage Enrollments", 
+    "Enrollments & Grades", 
     "Add Records", 
-    "Raw Data"
+    "View Data"
 ])
 
 if menu == "View Data":
@@ -128,14 +128,26 @@ if menu == "View Data":
     table = st.selectbox("Choose table", ["students", "teachers", "courses", "enrollments"])
     if st.button("Show Data"):
         if table == "enrollments":
+            semester_filter_clause = ""
+            if st.session_state.selected_semester_id:
+                semester_filter_clause = f"AND e.semester_id = {st.session_state.selected_semester_id}"
             # Custom query with names instead of IDs for better readability
             df = run_query(f"""
-                SELECT e.enrollment_id, CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name,
-                DATE(e.enrollment_date) AS enrollment_date,
-                COALESCE(e.final_grade, 'Not graded') AS final_grade
+                SELECT e.enrollment_id, 
+                       CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name, 
+                       c.course_name,
+                       DATE(e.enrollment_date) AS enrollment_date,
+                       COALESCE(e.final_grade, 'Not graded') AS final_grade,
+                       sem.semester_name,
+                       ay.year_name
                 FROM enrollments e
                 JOIN students s ON e.student_id = s.student_id
                 JOIN courses c ON e.course_id = c.course_id
+                JOIN semesters sem ON e.semester_id = sem.semester_id
+                JOIN academic_years ay ON e.academic_year_id = ay.year_id
+                WHERE 1=1
+                {semester_filter_clause}
+                ORDER BY e.enrollment_id DESC
             """)
         else:
             df = run_query(f"SELECT * FROM {table}")
@@ -299,9 +311,14 @@ elif menu == "Add Records":
 
 # Enroll students in courses and assign grades
 elif menu == "Enrollments & Grades":
-    # Show enrollments table at the top
-    st.subheader("Current Enrollments")
-    enrollments_view = run_query("""
+    # Show enrollments table at the top (filtered by semester)
+    st.subheader(f"Current Enrollments - Semester {st.session_state.selected_semester_id if st.session_state.selected_semester_id else 'All'}")
+
+    semester_filter_clause = ""
+    if st.session_state.selected_semester_id:
+        semester_filter_clause = f"AND e.semester_id = {st.session_state.selected_semester_id}"
+
+    enrollments_view = run_query(f"""
         SELECT
             CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student_name,
             c.course_name AS course,
@@ -310,6 +327,8 @@ elif menu == "Enrollments & Grades":
         FROM enrollments e
         JOIN students s ON e.student_id = s.student_id
         JOIN courses c ON e.course_id = c.course_id
+        WHERE 1=1
+        {semester_filter_clause}
         ORDER BY e.enrollment_id DESC
     """)
     st.dataframe(enrollments_view, use_container_width=True)
@@ -329,30 +348,42 @@ elif menu == "Enrollments & Grades":
     course_id = course_options[selected_course]
     
     if st.button("Enroll"):
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "INSERT INTO enrollments (student_id, course_id) VALUES (%s, %s)",
-                (student_id, course_id)
-            )
-            conn.commit()
-            st.success(f"Enrolled {selected_student} in {selected_course}")
-        except mysql.connector.Error as err:
-            if "Duplicate entry" in str(err):
-                st.warning(f"{selected_student} is already enrolled in {selected_course}")
-            else:
-                st.error(f"Error: {err}")
-        finally:
-            cursor.close()
+        if st.session_state.selected_semester_id is None:
+            st.error("Please select an academic year and semester from the sidebar first.")
+        else:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO enrollments (student_id, course_id, semester_id, academic_year_id) VALUES (%s, %s, %s, %s)",
+                    (student_id, course_id, st.session_state.selected_semester_id, st.session_state.selected_year_id)
+                )
+                conn.commit()
+                st.success(f"Enrolled {selected_student} in {selected_course}")
+            except mysql.connector.Error as err:
+                if "Duplicate entry" in str(err):
+                    st.warning(f"{selected_student} is already enrolled in {selected_course}")
+                else:
+                    st.error(f"Error: {err}")
+            finally:
+                cursor.close()
     # Assign grades
     st.subheader("Assign/Update Final Grade")
 
     #get enrollments list
-    enrollments_df = run_query("""
-        SELECT e.enrollment_id, CONCAT(s.first_name, ' ', IFNULL(s.middle_name, ''), ' ', s.last_name) AS student_name, c.course_name, COALESCE(e.final_grade, 'Not graded') AS final_grade
+    semester_filter_clause = ""
+    if st.session_state.selected_semester_id:
+        semester_filter_clause = f"AND e.semester_id = {st.session_state.selected_semester_id}"
+
+    enrollments_df = run_query(f"""
+        SELECT e.enrollment_id, 
+            CONCAT(s.first_name, ' ', IFNULL(s.middle_name, ''), ' ', s.last_name) AS student_name, 
+            c.course_name, 
+            COALESCE(e.final_grade, 'Not graded') AS final_grade
         FROM enrollments e
         JOIN students s ON e.student_id = s.student_id
         JOIN courses c ON e.course_id = c.course_id
+        WHERE 1=1
+        {semester_filter_clause}
         ORDER BY student_name, course_name
     """)
 
@@ -489,22 +520,31 @@ elif menu == "Course Summary":
         with col2:
             st.metric("Capacity", selected_course['capacity'])
             
-            # Current enrollment count
+            # Current enrollment count (filtered by semester)
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) as count FROM enrollments WHERE course_id = %s", (course_id,))
+            if st.session_state.selected_semester_id:
+                cursor.execute("SELECT COUNT(*) as count FROM enrollments WHERE course_id = %s AND semester_id = %s", 
+                            (course_id, st.session_state.selected_semester_id))
+            else:
+                cursor.execute("SELECT COUNT(*) as count FROM enrollments WHERE course_id = %s", (course_id,))
             enrollment_count = cursor.fetchone()[0]
             cursor.close()
             st.metric("Enrolled Students", enrollment_count)
         
-        # Show enrolled students
+        # Show enrolled students (filtered by current semester)
+        semester_filter_clause = ""
+        if st.session_state.selected_semester_id:
+            semester_filter_clause = f"AND e.semester_id = {st.session_state.selected_semester_id}"
+
         students_in_course = run_query(f"""
             SELECT CONCAT(s.first_name, ' ', COALESCE(s.middle_name, ''), ' ', s.last_name) AS student,
-                   s.grade_level,
-                   COALESCE(e.final_grade, 'Not graded') AS grade,
-                   DATE(e.enrollment_date) AS enrolled_on
+                s.grade_level,
+                COALESCE(e.final_grade, 'Not graded') AS grade,
+                DATE(e.enrollment_date) AS enrolled_on
             FROM enrollments e
             JOIN students s ON e.student_id = s.student_id
             WHERE e.course_id = {course_id}
+            {semester_filter_clause}
             ORDER BY s.last_name
         """)
         
